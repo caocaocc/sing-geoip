@@ -1,0 +1,53 @@
+name: Release
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 3 * * *"
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 1715173329/sing-geoip
+        uses: actions/checkout@v3
+        with:
+          repository: 1715173329/sing-geoip
+      - name: Add geoip-asn-cn-private.db
+        run: |
+          awk '/("tag", \*sourceRelease\.TagName)/{print "\twriter, err = newWriter(metadata, []string{\"cn\", \"private\", \"cloudflare\", \"cloudfront\", \"facebook\", \"fastly\", \"google\", \"netflix\", \"telegram\", \"twitter\"});\n\tif err != nil {\n\t\treturn err\n\t}\n\terr = write(writer, countryMap, \"geoip-asn-cn-private.db\", []string{\"cn\", \"private\", \"cloudflare\", \"cloudfront\", \"facebook\", \"fastly\", \"google\", \"netflix\", \"telegram\", \"twitter\"});\n\tif err != nil {\n\t\treturn err\n\t}" }1' main.go > temp && mv temp main.go
+          sed -i 's/release("Loyalsoldier\/geoip", "1715173329\/sing-geoip")/release("caocaocc\/geoip", "caocaocc\/sing-geoip")/' main.go
+      - name: Get latest go version
+        id: version
+        run: |
+          echo "go_version=$(curl -s https://raw.githubusercontent.com/actions/go-versions/main/versions-manifest.json | grep -oE '"version": "[0-9]{1}.[0-9]{1,}(.[0-9]{1,})?"' | head -1 | cut -d':' -f2 | sed 's/ //g; s/"//g')" >> $GITHUB_OUTPUT
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ steps.version.outputs.go_version }}
+      - name: Build geoip
+        id: build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: go run -v .
+      - name: Generate sha256 hash
+        if: steps.build.outputs.skip != 'true'
+        run: |
+          sha256sum geoip.db > geoip.db.sha256sum
+          sha256sum geoip-cn.db > geoip-cn.db.sha256sum
+          sha256sum geoip-asn-cn-private.db > geoip-asn-cn-private.db.sha256sum
+      - name: Create a release
+        if: steps.build.outputs.skip != 'true'
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.build.outputs.tag }}
+          name: ${{ steps.build.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: |
+            geoip.db
+            geoip.db.sha256sum
+            geoip-cn.db
+            geoip-cn.db.sha256sum
+            geoip-asn-cn-private.db
+            geoip-asn-cn-private.db.sha256sum
